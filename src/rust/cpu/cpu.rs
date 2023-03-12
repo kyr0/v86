@@ -1018,6 +1018,18 @@ pub unsafe fn call_interrupt_vector(
 
         switch_cs_real_mode(new_cs);
         *instruction_pointer = get_seg_cs() + new_ip;
+
+        if interrupt_nr == 3 && is_software_int {
+            dbg_log!("INT3 whatever mode, is_software_used={:?}", is_software_int);
+
+            *flags |= FLAG_TRAP;
+            let state_flags = pack_current_state_flags();
+            let state_flags_u32 = state_flags.to_u32() as i32;
+            let tsr_offset = *segment_offsets.offset(TR as isize);
+            safe_write32(tsr_offset + TSR_EFLAGS, state_flags_u32).unwrap();
+            
+            *in_hlt = true;
+        }
     }
 }
 
@@ -3014,6 +3026,8 @@ pub unsafe fn segment_prefix_op(seg: i32) {
 
 #[no_mangle]
 pub unsafe fn do_many_cycles_native() {
+    // reset trap flag
+    *flags &= !FLAG_TRAP;
     profiler::stat_increment(DO_MANY_CYCLES);
     let initial_instruction_counter = *instruction_counter;
     while (*instruction_counter).wrapping_sub(initial_instruction_counter) < LOOP_COUNTER as u32
